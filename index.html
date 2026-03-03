@@ -1,25 +1,138 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>3D Mini App</title>
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+    <title>3D Portfolio</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; background: #000; }
-        model-viewer { width: 100vw; height: 100vh; }
+        body { margin: 0; background: #111; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        .controls {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px; background: rgba(0,0,0,0.8);
+            padding: 8px 12px; border-radius: 20px; z-index: 10;
+        }
+        button {
+            background: #333; color: white; border: none; padding: 10px 18px;
+            border-radius: 15px; cursor: pointer; font-size: 13px; transition: 0.2s;
+        }
+        button.active { background: #0088cc; }
+        #loader {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-size: 14px;
+        }
     </style>
 </head>
 <body>
 
-    <model-viewer 
-        src="jabahab.glb" 
-        ar 
-        camera-controls 
-        auto-rotate 
-        shadow-intensity="1" 
-        exposure="1">
-    </model-viewer>
+    <div id="loader">Loading 3D...</div>
+    <div class="controls">
+        <button id="btnFinal" class="active">Final</button>
+        <button id="btnGray">Clay</button>
+        <button id="btnWire">Wireframe</button>
+    </div>
 
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls, finalModel, grayModel, wireModel;
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1, 4);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            // Lighting
+            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
+            const light = new THREE.DirectionalLight(0xffffff, 2);
+            light.position.set(5, 5, 5);
+            scene.add(light);
+
+            const loader = new GLTFLoader();
+            // ЗАГРУЗКА ТВОЕГО ФАЙЛА model.glb
+            loader.load('jabahab.glb', (gltf) => {
+                finalModel = gltf.scene;
+                
+                // Центрирование
+                const box = new THREE.Box3().setFromObject(finalModel);
+                const center = box.getCenter(new THREE.Vector3());
+                finalModel.position.sub(center);
+                scene.add(finalModel);
+
+                // Создание Clay (Серый)
+                grayModel = finalModel.clone();
+                const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
+                grayModel.traverse(c => { if(c.isMesh) c.material = mat; });
+                grayModel.visible = false;
+                scene.add(grayModel);
+
+                // Создание Wireframe
+                wireModel = new THREE.Group();
+                finalModel.traverse(c => {
+                    if(c.isMesh) {
+                        const wGeom = new THREE.WireframeGeometry(c.geometry);
+                        const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ color: 0x00aaff }));
+                        wLine.position.copy(c.position);
+                        wLine.rotation.copy(c.rotation);
+                        wLine.scale.copy(c.scale);
+                        wireModel.add(wLine);
+                    }
+                });
+                wireModel.visible = false;
+                scene.add(wireModel);
+
+                document.getElementById('loader').style.display = 'none';
+            });
+
+            // Кнопки
+            const bF = document.getElementById('btnFinal'), bG = document.getElementById('btnGray'), bW = document.getElementById('btnWire');
+            const reset = () => { [bF, bG, bW].forEach(b => b.classList.remove('active')); };
+
+            bF.onclick = () => { reset(); bF.classList.add('active'); finalModel.visible = true; grayModel.visible = false; wireModel.visible = false; };
+            bG.onclick = () => { reset(); bG.classList.add('active'); finalModel.visible = false; grayModel.visible = true; wireModel.visible = false; };
+            bW.onclick = () => { reset(); bW.classList.add('active'); finalModel.visible = false; grayModel.visible = true; wireModel.visible = true; };
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
 </body>
 </html>
