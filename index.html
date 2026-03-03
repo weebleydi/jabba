@@ -79,25 +79,27 @@
             loader.load('jabahab.glb', (gltf) => {
                 finalModel = gltf.scene;
                 
-                // Центрирование
+                // 1. Центрируем основную модель
                 const box = new THREE.Box3().setFromObject(finalModel);
                 const center = box.getCenter(new THREE.Vector3());
                 finalModel.position.sub(center);
                 scene.add(finalModel);
 
-                // Создание Clay (Серый)
+                // 2. Создаем Clay (теперь как вложение внутрь основной модели)
                 grayModel = finalModel.clone();
+                grayModel.position.set(0,0,0); // Сбрасываем позицию относительно родителя
                 const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
                 grayModel.traverse(c => { if(c.isMesh) c.material = mat; });
                 grayModel.visible = false;
-                scene.add(grayModel);
+                finalModel.add(grayModel); // Добавляем ВНУТРЬ finalModel
 
-                // Создание Wireframe
+                // 3. Создаем Wireframe (тоже внутрь)
                 wireModel = new THREE.Group();
                 finalModel.traverse(c => {
                     if(c.isMesh) {
                         const wGeom = new THREE.WireframeGeometry(c.geometry);
                         const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ color: 0x00aaff }));
+                        // Копируем только локальные данные меша
                         wLine.position.copy(c.position);
                         wLine.rotation.copy(c.rotation);
                         wLine.scale.copy(c.scale);
@@ -105,7 +107,7 @@
                     }
                 });
                 wireModel.visible = false;
-                scene.add(wireModel);
+                finalModel.add(wireModel); // Добавляем ВНУТРЬ finalModel
 
                 document.getElementById('loader').style.display = 'none';
             });
@@ -136,3 +138,4 @@
     </script>
 </body>
 </html>
+
