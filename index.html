@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>jabby</title>
+    <title>3D Portfolio Pro</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -23,7 +23,7 @@
         }
 
         .controls {
-            position: absolute; bottom: 40px; left: 50%; transform: translateX( -50% );
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             display: flex; gap: 8px; background: rgba(0, 0, 0, 0.7);
             padding: 6px; border-radius: 20px; z-index: 100;
             border: 1px solid var(--border-glass);
@@ -92,7 +92,7 @@
         let scene, camera, renderer, controls, mainModel;
         let currentMode = 'final';
         let currentIndex = 0;
-        let idleTimer; // Таймер бездействия
+        let idleTimer;
         const modelFiles = ['jab_1.glb', 'jab_2.glb', 'jab_3.glb', 'jab_4.glb'];
         const clayMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.6, metalness: 0.1 });
 
@@ -121,14 +121,12 @@
         };
 
         function resetIdleTimer() {
-            if (controls) {
-                controls.autoRotate = false; // Выключаем вращение при касании
-                clearTimeout(idleTimer);
-                // Если не трогаем 3 секунды - включаем обратно
-                idleTimer = setTimeout(() => {
-                    controls.autoRotate = true;
-                }, 3000);
-            }
+            if (!controls) return;
+            controls.autoRotate = false;
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                controls.autoRotate = true;
+            }, 3000);
         }
 
         function loadCurrentModel() {
@@ -136,7 +134,7 @@
                 mainModel.traverse(c => {
                     if (c.isMesh) {
                         c.geometry.dispose();
-                        if (c.userData.originalMaterial.dispose) c.userData.originalMaterial.dispose();
+                        if (c.userData.originalMaterial && c.userData.originalMaterial.dispose) c.userData.originalMaterial.dispose();
                     }
                 });
                 scene.remove(mainModel);
@@ -147,12 +145,34 @@
             const loader = new GLTFLoader();
             loader.load(modelFiles[currentIndex], (gltf) => {
                 mainModel = gltf.scene;
+                
                 let tris = 0, verts = 0;
 
+                // --- ИСПРАВЛЕНИЕ "УЛЕТАНИЯ" ---
                 const box = new THREE.Box3().setFromObject(mainModel);
+                const size = box.getSize(new THREE.Vector3());
                 const center = box.getCenter(new THREE.Vector3());
-                mainModel.position.sub(center);
+                
+                // Центрируем геометрию внутри объекта
+                mainModel.position.x += (mainModel.position.x - center.x);
+                mainModel.position.y += (mainModel.position.y - center.y);
+                mainModel.position.z += (mainModel.position.z - center.z);
+                
                 scene.add(mainModel);
+
+                // Настраиваем камеру под размер модели
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+                cameraZ *= 1.5; // Немного отдаляем
+                
+                camera.position.set(0, maxDim / 4, cameraZ);
+                camera.updateProjectionMatrix();
+                
+                if(controls) {
+                    controls.target.set(0, 0, 0);
+                    controls.update();
+                }
 
                 mainModel.traverse(c => {
                     if (c.isMesh) {
@@ -178,15 +198,15 @@
                 document.getElementById('stats').style.display = 'block';
                 
                 changeView(currentMode);
-                resetIdleTimer(); // Запускаем таймер для новой модели
+                resetIdleTimer();
             });
         }
 
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0a0a0a);
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 1, 5);
+            
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -195,12 +215,10 @@
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.autoRotate = true; // Включаем по умолчанию
-            controls.autoRotateSpeed = 2.0; // Скорость вращения
+            controls.autoRotateSpeed = 2.0;
 
-            // Слушаем события мыши и касаний
+            // Обработка касаний для остановки вращения
             renderer.domElement.addEventListener('pointerdown', resetIdleTimer);
-            renderer.domElement.addEventListener('wheel', resetIdleTimer);
 
             scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.5));
             const light = new THREE.DirectionalLight(0xffffff, 1);
@@ -218,7 +236,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            if(controls) controls.update(); // Update важен для autoRotate
+            if(controls) controls.update();
             renderer.render(scene, camera);
         }
 
@@ -227,4 +245,3 @@
     </script>
 </body>
 </html>
-
