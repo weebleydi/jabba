@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>jabby Pro</title>
+    <title>3D Portfolio Pro</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -23,7 +23,7 @@
         }
 
         .controls {
-            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 40px; left: 50%; transform: translateX( -50% );
             display: flex; gap: 8px; background: rgba(0, 0, 0, 0.7);
             padding: 6px; border-radius: 20px; z-index: 100;
             border: 1px solid var(--border-glass);
@@ -84,18 +84,16 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // Инициализация Telegram WebApp ПЕРВОЙ строкой
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
-            window.Telegram.WebApp.expand(); // Раскрываем на весь экран
+            window.Telegram.WebApp.expand();
         }
 
         let scene, camera, renderer, controls, mainModel;
         let currentMode = 'final';
         let currentIndex = 0;
+        let idleTimer; // Таймер бездействия
         const modelFiles = ['jab_1.glb', 'jab_2.glb', 'jab_3.glb', 'jab_4.glb'];
-        
-        // Создаем материал для Clay режима один раз
         const clayMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.6, metalness: 0.1 });
 
         window.nextModel = () => { currentIndex = (currentIndex + 1) % modelFiles.length; loadCurrentModel(); };
@@ -104,7 +102,6 @@
         window.changeView = function(mode) {
             currentMode = mode;
             if (!mainModel) return;
-
             document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
             const activeBtn = mode === 'final' ? 'btnFinal' : (mode === 'clay' ? 'btnClay' : 'btnWire');
             document.getElementById(activeBtn).classList.add('active');
@@ -112,20 +109,27 @@
             mainModel.traverse(c => {
                 if (c.isMesh) {
                     const wire = c.getObjectByName("wireframe");
-                    // Переключаем материалы
                     if (mode === 'final') {
                         c.material = c.userData.originalMaterial;
                         if(wire) wire.visible = false;
-                    } else if (mode === 'clay') {
+                    } else {
                         c.material = clayMat;
-                        if(wire) wire.visible = false;
-                    } else if (mode === 'wire') {
-                        c.material = clayMat;
-                        if(wire) wire.visible = true;
+                        if(wire) wire.visible = (mode === 'wire');
                     }
                 }
             });
         };
+
+        function resetIdleTimer() {
+            if (controls) {
+                controls.autoRotate = false; // Выключаем вращение при касании
+                clearTimeout(idleTimer);
+                // Если не трогаем 3 секунды - включаем обратно
+                idleTimer = setTimeout(() => {
+                    controls.autoRotate = true;
+                }, 3000);
+            }
+        }
 
         function loadCurrentModel() {
             if (mainModel) {
@@ -143,11 +147,8 @@
             const loader = new GLTFLoader();
             loader.load(modelFiles[currentIndex], (gltf) => {
                 mainModel = gltf.scene;
-                
-                let tris = 0;
-                let verts = 0;
+                let tris = 0, verts = 0;
 
-                // Центрирование
                 const box = new THREE.Box3().setFromObject(mainModel);
                 const center = box.getCenter(new THREE.Vector3());
                 mainModel.position.sub(center);
@@ -155,14 +156,10 @@
 
                 mainModel.traverse(c => {
                     if (c.isMesh) {
-                        // Сохраняем родной материал в userData, чтобы он не терялся
                         c.userData.originalMaterial = c.material;
-
-                        // Считаем статы
                         tris += c.geometry.index ? c.geometry.index.count / 3 : c.geometry.attributes.position.count / 3;
                         verts += c.geometry.attributes.position.count;
                         
-                        // Создаем сетку
                         const wGeom = new THREE.WireframeGeometry(c.geometry);
                         const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ 
                             color: 0x98ff98, transparent: true, opacity: 0.3 
@@ -181,6 +178,7 @@
                 document.getElementById('stats').style.display = 'block';
                 
                 changeView(currentMode);
+                resetIdleTimer(); // Запускаем таймер для новой модели
             });
         }
 
@@ -197,6 +195,12 @@
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
+            controls.autoRotate = true; // Включаем по умолчанию
+            controls.autoRotateSpeed = 2.0; // Скорость вращения
+
+            // Слушаем события мыши и касаний
+            renderer.domElement.addEventListener('pointerdown', resetIdleTimer);
+            renderer.domElement.addEventListener('wheel', resetIdleTimer);
 
             scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.5));
             const light = new THREE.DirectionalLight(0xffffff, 1);
@@ -214,7 +218,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            if(controls) controls.update();
+            if(controls) controls.update(); // Update важен для autoRotate
             renderer.render(scene, camera);
         }
 
