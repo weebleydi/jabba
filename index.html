@@ -3,52 +3,77 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>3D Portfolio with Stats</title>
+    <title>3D Portfolio: Jab Series</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; background: #111; overflow: hidden; font-family: 'Courier New', monospace; }
+        :root {
+            --neon-green: #98ff98; /* Нежно-зеленый */
+            --bg-glass: rgba(152, 255, 152, 0.15);
+            --border-glass: rgba(152, 255, 152, 0.3);
+        }
+
+        body { margin: 0; background: #0a0a0a; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        
+
         /* Окно статистики */
         .stats-box {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(0, 0, 0, 0.7); color: #00ff00;
-            padding: 10px; border-radius: 8px; font-size: 12px;
-            border: 1px solid rgba(0, 255, 0, 0.3); pointer-events: none;
-            z-index: 100; min-width: 120px;
+            background: var(--bg-glass); color: var(--neon-green);
+            padding: 12px; border-radius: 12px; font-size: 11px;
+            border: 1px solid var(--border-glass); backdrop-filter: blur(10px);
+            z-index: 100; pointer-events: none; text-transform: uppercase; letter-spacing: 1px;
         }
 
+        /* Кнопки режимов */
         .controls {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 12px; background: rgba(0,0,0,0.8);
-            padding: 10px 15px; border-radius: 25px; z-index: 100;
+            display: flex; gap: 10px; background: rgba(0, 0, 0, 0.6);
+            padding: 8px; border-radius: 20px; z-index: 100;
+            border: 1px solid var(--border-glass); backdrop-filter: blur(10px);
         }
         button {
-            background: #333; color: white; border: none; padding: 12px 20px;
-            border-radius: 18px; cursor: pointer; font-size: 14px; font-weight: bold;
-            transition: 0.2s;
+            background: transparent; color: var(--neon-green); border: none; padding: 10px 18px;
+            border-radius: 15px; cursor: pointer; font-size: 13px; font-weight: 600;
+            transition: 0.3s; opacity: 0.7;
         }
-        button.active { background: #0088cc; }
+        button.active { background: var(--bg-glass); opacity: 1; box-shadow: inset 0 0 10px var(--bg-glass); }
+
+        /* Стрелки навигации */
+        .nav-arrow {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            background: transparent; color: var(--neon-green);
+            font-size: 40px; border: none; cursor: pointer;
+            padding: 20px; z-index: 100; opacity: 0.2;
+            transition: 0.3s; user-select: none;
+        }
+        .nav-arrow:hover { opacity: 0.8; }
+        .nav-arrow:active { transform: translateY(-50%) scale(0.9); }
+        .prev { left: 10px; }
+        .next { right: 10px; }
+
         #loader {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: white; font-size: 16px;
+            color: var(--neon-green); font-size: 14px; letter-spacing: 2px;
         }
     </style>
 </head>
 <body>
-    <div id="loader">SCANNING GEOMETRY...</div>
+
+    <div id="loader">INITIALIZING...</div>
     
     <div class="stats-box" id="stats" style="display: none;">
-        <div>MODEL INFO:</div>
-        <hr style="border: 0.5px solid rgba(0,255,0,0.2)">
-        <div>Tris: <span id="tris">0</span></div>
-        <div>Verts: <span id="verts">0</span></div>
+        <div style="font-weight: bold; margin-bottom: 5px;" id="model-name">MODEL: NONE</div>
+        <div style="opacity: 0.8;">Tris: <span id="tris">0</span></div>
+        <div style="opacity: 0.8;">Verts: <span id="verts">0</span></div>
     </div>
 
+    <button class="nav-arrow prev" onclick="prevModel()">&#8249;</button>
+    <button class="nav-arrow next" onclick="nextModel()">&#8250;</button>
+
     <div class="controls">
-        <button id="btnFinal" class="active" onclick="changeView('final')">Final</button>
-        <button id="btnGray" onclick="changeView('clay')">Clay</button>
-        <button id="btnWire" onclick="changeView('wire')">Wire</button>
+        <button id="btnFinal" class="active" onclick="changeView('final')">FINAL</button>
+        <button id="btnGray" onclick="changeView('clay')">CLAY</button>
+        <button id="btnWire" onclick="changeView('wire')">WIRE</button>
     </div>
 
     <script type="importmap">
@@ -66,15 +91,21 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let scene, camera, renderer, controls, mainModel;
-        let originalMaterials = new Map();
+        let currentMode = 'final';
+        let currentIndex = 0;
+        const modelFiles = ['jab_1.glb', 'jab_2.glb', 'jab_3.glb', 'jab_4.glb'];
+        const originalMaterials = new Map();
         const clayMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
 
+        // Навигация
+        window.nextModel = () => { currentIndex = (currentIndex + 1) % modelFiles.length; loadCurrentModel(); };
+        window.prevModel = () => { currentIndex = (currentIndex - 1 + modelFiles.length) % modelFiles.length; loadCurrentModel(); };
+
         window.changeView = function(mode) {
+            currentMode = mode;
             if (!mainModel) return;
             document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
-            if(mode === 'final') document.getElementById('btnFinal').classList.add('active');
-            if(mode === 'clay') document.getElementById('btnGray').classList.add('active');
-            if(mode === 'wire') document.getElementById('btnWire').classList.add('active');
+            document.getElementById('btn' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
 
             mainModel.traverse(c => {
                 if (c.isMesh) {
@@ -82,44 +113,36 @@
                     if (mode === 'final') {
                         c.material = originalMaterials.get(c.uuid);
                         if(wire) wire.visible = false;
-                    } else if (mode === 'clay') {
+                    } else {
                         c.material = clayMaterial;
-                        if(wire) wire.visible = false;
-                    } else if (mode === 'wire') {
-                        c.material = clayMaterial;
-                        if(wire) wire.visible = true;
+                        if(wire) wire.visible = (mode === 'wire');
                     }
                 }
             });
         };
 
-        function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 1, 5);
+        function loadCurrentModel() {
+            if (mainModel) {
+                // Очистка памяти
+                mainModel.traverse(c => {
+                    if (c.isMesh) {
+                        c.geometry.dispose();
+                        if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+                        else c.material.dispose();
+                    }
+                });
+                scene.remove(mainModel);
+            }
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            document.body.appendChild(renderer.domElement);
-
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-
-            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-            const light = new THREE.DirectionalLight(0xffffff, 2);
-            light.position.set(5, 5, 5);
-            scene.add(light);
+            document.getElementById('loader').innerText = "LOADING " + modelFiles[currentIndex].toUpperCase() + "...";
+            document.getElementById('loader').style.display = 'block';
+            originalMaterials.clear();
 
             const loader = new GLTFLoader();
-            loader.load('jabahab.glb', (gltf) => {
+            loader.load(modelFiles[currentIndex], (gltf) => {
                 mainModel = gltf.scene;
 
-                // Считаем полигоны
-                let totalTris = 0;
-                let totalVerts = 0;
-
+                let tris = 0, verts = 0;
                 const box = new THREE.Box3().setFromObject(mainModel);
                 const center = box.getCenter(new THREE.Vector3());
                 mainModel.position.sub(center);
@@ -127,16 +150,14 @@
 
                 mainModel.traverse(c => {
                     if (c.isMesh) {
-                        // Подсчет статистики
                         const geom = c.geometry;
-                        totalTris += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
-                        totalVerts += geom.attributes.position.count;
-
+                        tris += geom.index ? geom.index.count / 3 : geom.attributes.position.count / 3;
+                        verts += geom.attributes.position.count;
                         originalMaterials.set(c.uuid, c.material);
                         
                         const wGeom = new THREE.WireframeGeometry(c.geometry);
                         const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ 
-                            color: 0x00aaff, transparent: true, opacity: 0.4 
+                            color: 0x98ff98, transparent: true, opacity: 0.3 
                         }));
                         wLine.name = "wireframe";
                         wLine.visible = false;
@@ -144,24 +165,43 @@
                     }
                 });
 
-                // Выводим статистику
-                document.getElementById('tris').innerText = Math.round(totalTris).toLocaleString();
-                document.getElementById('verts').innerText = totalVerts.toLocaleString();
+                document.getElementById('tris').innerText = Math.round(tris).toLocaleString();
+                document.getElementById('verts').innerText = verts.toLocaleString();
+                document.getElementById('model-name').innerText = "MODEL: " + modelFiles[currentIndex].replace('.glb','').toUpperCase();
+                
                 document.getElementById('stats').style.display = 'block';
                 document.getElementById('loader').style.display = 'none';
-
+                
+                changeView(currentMode); // Сохраняем выбранный режим (Wire/Clay/Final)
             });
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1, 5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
+            const light = new THREE.DirectionalLight(0xffffff, 1.5);
+            light.position.set(5, 5, 5);
+            scene.add(light);
+
+            loadCurrentModel();
 
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
-
-            if (window.Telegram && window.Telegram.WebApp) {
-                window.Telegram.WebApp.ready();
-                window.Telegram.WebApp.expand();
-            }
         }
 
         function animate() {
