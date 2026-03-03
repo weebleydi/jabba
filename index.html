@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>3D Portfolio</title>
+    <title>3D Portfolio Fix</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body { margin: 0; background: #111; overflow: hidden; font-family: sans-serif; }
@@ -25,8 +25,7 @@
     </style>
 </head>
 <body>
-
-    <div id="loader">Loading 3D...</div>
+    <div id="loader">Loading...</div>
     <div class="controls">
         <button id="btnFinal" class="active">Final</button>
         <button id="btnGray">Clay</button>
@@ -47,7 +46,9 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        let scene, camera, renderer, controls, finalModel, grayModel, wireModel;
+        let scene, camera, renderer, controls, mainModel;
+        let originalMaterials = new Map(); // Хранилище родных текстур
+        const clayMaterial = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
 
         init();
         animate();
@@ -55,70 +56,74 @@
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111111);
-
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(0, 1, 4);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            // Lighting
             scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
             const light = new THREE.DirectionalLight(0xffffff, 2);
             light.position.set(5, 5, 5);
             scene.add(light);
 
             const loader = new GLTFLoader();
-            // ЗАГРУЗКА ТВОЕГО ФАЙЛА model.glb
-            loader.load('jabahab.glb', (gltf) => {
-                finalModel = gltf.scene;
-                
-                // 1. Центрируем основную модель
-                const box = new THREE.Box3().setFromObject(finalModel);
+            loader.load('model.glb', (gltf) => {
+                mainModel = gltf.scene;
+
+                // Центрируем один раз
+                const box = new THREE.Box3().setFromObject(mainModel);
                 const center = box.getCenter(new THREE.Vector3());
-                finalModel.position.sub(center);
-                scene.add(finalModel);
+                mainModel.position.sub(center);
+                scene.add(mainModel);
 
-                // 2. Создаем Clay (теперь как вложение внутрь основной модели)
-                grayModel = finalModel.clone();
-                grayModel.position.set(0,0,0); // Сбрасываем позицию относительно родителя
-                const mat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.8 });
-                grayModel.traverse(c => { if(c.isMesh) c.material = mat; });
-                grayModel.visible = false;
-                finalModel.add(grayModel); // Добавляем ВНУТРЬ finalModel
-
-                // 3. Создаем Wireframe (тоже внутрь)
-                wireModel = new THREE.Group();
-                finalModel.traverse(c => {
-                    if(c.isMesh) {
+                // Запоминаем родные материалы и создаем сетку сразу на мешах
+                mainModel.traverse(c => {
+                    if (c.isMesh) {
+                        originalMaterials.set(c.uuid, c.material);
+                        
+                        // Создаем сетку как дочерний объект каждого конкретного меша
                         const wGeom = new THREE.WireframeGeometry(c.geometry);
-                        const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ color: 0x00aaff }));
-                        // Копируем только локальные данные меша
-                        wLine.position.copy(c.position);
-                        wLine.rotation.copy(c.rotation);
-                        wLine.scale.copy(c.scale);
-                        wireModel.add(wLine);
+                        const wLine = new THREE.LineSegments(wGeom, new THREE.LineBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.5 }));
+                        wLine.name = "wireframe";
+                        wLine.visible = false;
+                        c.add(wLine); 
                     }
                 });
-                wireModel.visible = false;
-                finalModel.add(wireModel); // Добавляем ВНУТРЬ finalModel
 
                 document.getElementById('loader').style.display = 'none';
             });
 
-            // Кнопки
+            // Логика кнопок
             const bF = document.getElementById('btnFinal'), bG = document.getElementById('btnGray'), bW = document.getElementById('btnWire');
-            const reset = () => { [bF, bG, bW].forEach(b => b.classList.remove('active')); };
+            
+            const setMode = (mode) => {
+                [bF, bG, bW].forEach(b => b.classList.remove('active'));
+                mainModel.traverse(c => {
+                    if (c.isMesh) {
+                        const wire = c.getObjectByName("wireframe");
+                        if (mode === 'final') {
+                            c.material = originalMaterials.get(c.uuid);
+                            if(wire) wire.visible = false;
+                        } else if (mode === 'clay') {
+                            c.material = clayMaterial;
+                            if(wire) wire.visible = false;
+                        } else if (mode === 'wire') {
+                            c.material = clayMaterial;
+                            if(wire) wire.visible = true;
+                        }
+                    }
+                });
+            };
 
-            bF.onclick = () => { reset(); bF.classList.add('active'); finalModel.visible = true; grayModel.visible = false; wireModel.visible = false; };
-            bG.onclick = () => { reset(); bG.classList.add('active'); finalModel.visible = false; grayModel.visible = true; wireModel.visible = false; };
-            bW.onclick = () => { reset(); bW.classList.add('active'); finalModel.visible = false; grayModel.visible = true; wireModel.visible = true; };
+            bF.onclick = () => { bF.classList.add('active'); setMode('final'); };
+            bG.onclick = () => { bG.classList.add('active'); setMode('clay'); };
+            bW.onclick = () => { bW.classList.add('active'); setMode('wire'); };
 
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -138,4 +143,3 @@
     </script>
 </body>
 </html>
-
